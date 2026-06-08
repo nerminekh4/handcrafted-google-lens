@@ -1,7 +1,10 @@
 from groq import Groq
 import base64
 from dotenv import load_dotenv
-import os 
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).parent
 
 
 class ImageAgent:
@@ -25,7 +28,7 @@ class ImageAgent:
 	def ask_vision_model(self, image_path):
 
 		base64_image = ImageAgent.encode_image(image_path=image_path)
-		prompt = ImageAgent.read_file(file_path="./context.txt")
+		prompt = ImageAgent.read_file(file_path=BASE_DIR / "context.txt")
 
 		chat_completion = self.client.chat.completions.create(
 			messages=[

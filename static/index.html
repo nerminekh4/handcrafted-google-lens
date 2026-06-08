@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>Handcrafted Lens</title>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    // Afficher les erreurs serveur (4xx/5xx) dans #result
+    document.addEventListener('htmx:responseError', function(evt) {
+      document.getElementById('result').innerHTML =
+        '<div class="result-card"><div class="result-icon">⚠️</div>' +
+        '<div class="result-text"><p>Erreur serveur (' + evt.detail.xhr.status + ') — ' +
+        (evt.detail.xhr.responseText || 'vérifiez la console du terminal') + '</p></div></div>';
+    });
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -96,6 +105,7 @@
 
     /* ── Upload zone ── */
     .upload-zone {
+      display: block;
       position: relative;
       border: 2px dashed var(--border);
       border-radius: var(--radius);
@@ -243,7 +253,7 @@
       cursor: pointer;
     }
 
-    /* ── Spinner / htmx indicator ── */
+    /* ── Spinner ── */
     #spinner {
       display: none;
       flex-direction: column;
@@ -251,8 +261,6 @@
       gap: 14px;
       padding: 28px 0 8px;
     }
-
-    #spinner.htmx-request { display: flex; }
 
     .spinner-ring {
       width: 40px;
@@ -353,50 +361,45 @@
   <main>
     <!-- Upload card -->
     <div class="card">
-      <form id="analyzeForm"
-            hx-post="/analyze"
-            hx-target="#result"
-            hx-swap="innerHTML"
-            hx-encoding="multipart/form-data"
-            hx-indicator="#spinner">
+      <!-- fileInput hors du dropZone pour qu'il soit toujours accessible -->
+      <input type="file" name="file" id="fileInput" accept="image/*"
+             style="display:none" />
 
-        <!-- Drag & drop / file pick zone -->
-        <div class="upload-zone" id="dropZone">
-          <input type="file" name="file" id="fileInput"
-                 accept="image/*" required />
-          <span class="upload-icon">🖼️</span>
-          <p class="upload-label">Glissez une image ici</p>
-          <p class="upload-hint">ou cliquez pour choisir un fichier</p>
-        </div>
+      <!-- Drag & drop / file pick zone (label déclenche fileInput) -->
+      <label class="upload-zone" id="dropZone" for="fileInput">
+        <span class="upload-icon">🖼️</span>
+        <p class="upload-label">Glissez une image ici</p>
+        <p class="upload-hint">ou cliquez pour choisir un fichier</p>
+      </label>
 
-        <!-- Camera shortcut (shows capture dialog on mobile) -->
-        <div class="camera-btn-wrap" style="margin-top:16px;">
-          <label class="camera-shortcut">
-            📷 Prendre une photo
-            <input type="file" accept="image/*" capture="environment" id="cameraInput" />
-          </label>
-        </div>
+      <!-- Camera shortcut (mobile) -->
+      <div class="camera-btn-wrap" style="margin-top:16px;">
+        <label class="camera-shortcut">
+          📷 Prendre une photo
+          <input type="file" accept="image/*" capture="environment" id="cameraInput" />
+        </label>
+      </div>
 
-        <!-- Preview -->
-        <div id="preview-container" style="margin-top:16px;">
-          <img id="preview" src="" alt="Aperçu de l'image" />
-          <span class="preview-name" id="fileName"></span>
-        </div>
+      <!-- Preview -->
+      <div id="preview-container" style="margin-top:16px;">
+        <img id="preview" src="" alt="Aperçu de l'image" />
+        <span class="preview-name" id="fileName"></span>
+      </div>
 
-        <div style="margin-top: 20px;" class="btn-row">
-          <button type="button" class="btn btn-secondary" id="clearBtn" style="display:none;" onclick="clearImage()">
-            ✕ Effacer
-          </button>
-          <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
-            🔍 Analyser
-          </button>
-        </div>
-
-      </form>
+      <div style="margin-top: 20px;" class="btn-row">
+        <button type="button" class="btn btn-secondary" id="clearBtn"
+                style="display:none;" onclick="clearImage()">
+          ✕ Effacer
+        </button>
+        <button type="button" class="btn btn-primary" id="submitBtn" disabled
+                onclick="analyzeImage()">
+          🔍 Analyser
+        </button>
+      </div>
     </div>
 
     <!-- Spinner -->
-    <div id="spinner" class="htmx-indicator">
+    <div id="spinner" style="display:none;">
       <div class="spinner-ring"></div>
       <span class="spinner-label">Analyse en cours…</span>
     </div>
@@ -409,21 +412,26 @@
   <footer>Propulsé par Groq · Llama 4 Scout · HTMX</footer>
 
   <script>
-    const fileInput   = document.getElementById('fileInput');
+    const fileInput  = document.getElementById('fileInput');
     const cameraInput = document.getElementById('cameraInput');
-    const dropZone    = document.getElementById('dropZone');
-    const preview     = document.getElementById('preview');
-    const previewCon  = document.getElementById('preview-container');
-    const fileName    = document.getElementById('fileName');
-    const submitBtn   = document.getElementById('submitBtn');
-    const clearBtn    = document.getElementById('clearBtn');
-    const form        = document.getElementById('analyzeForm');
+    const dropZone   = document.getElementById('dropZone');
+    const preview    = document.getElementById('preview');
+    const previewCon = document.getElementById('preview-container');
+    const fileName   = document.getElementById('fileName');
+    const submitBtn  = document.getElementById('submitBtn');
+    const clearBtn   = document.getElementById('clearBtn');
+    const spinner    = document.getElementById('spinner');
+    const result     = document.getElementById('result');
 
-    // ── Shared handler for any file selection ──────────────────────────
+    // Fichier actuellement sélectionné
+    let selectedFile = null;
+
+    // ── Shared handler ─────────────────────────────────────────────────
     function handleFile(file) {
       if (!file || !file.type.startsWith('image/')) return;
+      selectedFile = file;
+      result.innerHTML = '';
 
-      // Show preview
       const reader = new FileReader();
       reader.onload = e => {
         preview.src = e.target.result;
@@ -434,24 +442,13 @@
         dropZone.style.display = 'none';
       };
       reader.readAsDataURL(file);
-
-      // Sync both inputs so the form always has the latest file
-      // We use a DataTransfer trick to set the file on the main input
-      syncToMainInput(file);
     }
 
-    function syncToMainInput(file) {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      fileInput.files = dt.files;
-    }
-
-    // ── File input (drag/drop zone) ──────────────────────────────────
+    // ── Inputs ────────────────────────────────────────────────────────
     fileInput.addEventListener('change', () => {
       if (fileInput.files[0]) handleFile(fileInput.files[0]);
     });
 
-    // ── Camera input ──────────────────────────────────────────────────
     cameraInput.addEventListener('change', () => {
       if (cameraInput.files[0]) handleFile(cameraInput.files[0]);
     });
@@ -461,11 +458,7 @@
       e.preventDefault();
       dropZone.classList.add('drag-over');
     });
-
-    dropZone.addEventListener('dragleave', () => {
-      dropZone.classList.remove('drag-over');
-    });
-
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
     dropZone.addEventListener('drop', e => {
       e.preventDefault();
       dropZone.classList.remove('drag-over');
@@ -473,22 +466,45 @@
       if (file) handleFile(file);
     });
 
-    // ── Clear ─────────────────────────────────────────────────────────
-    function clearImage() {
-      fileInput.value   = '';
-      cameraInput.value = '';
-      preview.src       = '';
-      previewCon.classList.remove('visible');
-      fileName.textContent  = '';
-      submitBtn.disabled    = true;
-      clearBtn.style.display = 'none';
-      dropZone.style.display = '';
-      document.getElementById('result').innerHTML = '';
+    // ── Analyse via fetch ─────────────────────────────────────────────
+    async function analyzeImage() {
+      if (!selectedFile) return;
+
+      submitBtn.disabled = true;
+      spinner.style.display = 'flex';
+      result.innerHTML = '';
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      try {
+        const res = await fetch('/analyze', { method: 'POST', body: formData });
+        const html = await res.text();
+        result.innerHTML = html;
+        result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (err) {
+        result.innerHTML =
+          '<div class="result-card"><div class="result-icon">⚠️</div>' +
+          '<div class="result-text"><p>Erreur réseau : ' + err.message + '</p></div></div>';
+      } finally {
+        spinner.style.display = 'none';
+        submitBtn.disabled = false;
+      }
     }
 
-    // ── Clear result on new selection ─────────────────────────────────
-    fileInput.addEventListener('change',   () => document.getElementById('result').innerHTML = '');
-    cameraInput.addEventListener('change', () => document.getElementById('result').innerHTML = '');
+    // ── Clear ─────────────────────────────────────────────────────────
+    function clearImage() {
+      selectedFile = null;
+      fileInput.value = '';
+      cameraInput.value = '';
+      preview.src = '';
+      previewCon.classList.remove('visible');
+      fileName.textContent = '';
+      submitBtn.disabled = true;
+      clearBtn.style.display = 'none';
+      dropZone.style.display = '';
+      result.innerHTML = '';
+    }
   </script>
 </body>
 </html>
