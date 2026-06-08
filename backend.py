@@ -25,24 +25,21 @@ class ImageAgent:
 	def ask_vision_model(self, image_path):
 
 		base64_image = ImageAgent.encode_image(image_path=image_path)
+		prompt = ImageAgent.read_file(file_path="./context.txt")
 
 		chat_completion = self.client.chat.completions.create(
 			messages=[
 				{
-					"role": "system",
-					"content": ImageAgent.read_file(file_path="./context.txt")
-				},
-				{
 					"role": "user",
 					"content": [
-						{"type": "text", "text": ImageAgent.read_file(file_path="./prompt.txt")},
+						{"type": "text", "text": prompt},
 						{
 							"type": "image_url",
 							"image_url": {
 								"url": f"data:image/jpeg;base64,{base64_image}",
 							},
 						},
-					], 
+					],
 				}
 			],
 
